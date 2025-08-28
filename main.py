@@ -307,3 +307,68 @@ run_rf(df_train_data, 'SalePrice', 1, 0.3,
 
 '''validate model'''
 
+#NOTE: Data Cleaning & Feature Engineering – Natalie’s part
+
+def prepare_data(df_train_data: pd.DataFrame) -> pd.DataFrame:
+    #Data Cleaning / Handling Missing Values
+    # Fix invalid values in 'YearMade':
+    # - Replace 1000 with NaN
+    # - Fill missing values with median per ModelID - because machines of the same model usually share a similar production year.
+    # - Fill any remaining missing values with overall median
+    df_train_data["YearMade"] = df_train_data["YearMade"].replace(1000, np.nan)
+    df_train_data["YearMade"] = df_train_data.groupby("ModelID")["YearMade"].transform(lambda x: x.fillna(x.median()))
+    df_train_data["YearMade"] = df_train_data["YearMade"].fillna(df_train_data["YearMade"].median())
+
+    #Enclosure
+    df_train_data["Enclosure"].isna().sum() # 0.08% missing values
+    df_train_data["Enclosure"] = df_train_data["Enclosure"].fillna(df_train_data["Enclosure"].mode()[0])
+
+    #ProductSize
+    #df_train_data["ProductSize"].unique()
+    #df_train_data["fiProductClassDesc"].unique()
+    #df_train_data["fiProductClassDesc"].nunique()
+    #print(df_train_data.groupby("fiProductClassDesc")["ProductSize"].count())
+    #fiProductClassDesc has NO missing values and it's strongly related to ProductSize.
+    # Note: solution drafted with ChatGPT
+
+    productsize_mapping = df_train_data.groupby("fiProductClassDesc")["ProductSize"].agg(
+        lambda x: x.mode().iloc[0] if not x.mode().empty else np.nan
+    )
+    df_train_data["ProductSize"] = df_train_data["ProductSize"].fillna(df_train_data["fiProductClassDesc"].map(productsize_mapping))
+    df_train_data["ProductSize"] = df_train_data["ProductSize"].fillna("Missing")
+
+    #Hydraulics
+    #Option 1: fill missing with a new category "Missing"
+    df_train_data["Hydraulics"] = df_train_data["Hydraulics"].fillna("Missing")
+    #Option 2: fill missing with the most frequent value (mode)
+    df_train_data["Hydraulics"] = df_train_data["Hydraulics"].fillna(df_train_data["Hydraulics"].mode()[0])
+
+    # Drop ID columns and features with >80% missing (maybe???)
+    #ID columns
+    #df_train_data = df_train_data.drop(columns=["SalesID", "MachineID", "ModelID", "datasource"])
+
+    #80% missing
+    df_train_data = df_train_data.drop(columns=[
+        "fiModelSeries", "fiModelDescriptor",
+        "Blade_Extension", "Blade_Width", "Enclosure_Type", "Engine_Horsepower",
+        "Pushblock", "Scarifier", "Tip_Control",
+        "Coupler_System", "Grouser_Tracks", "Hydraulics_Flow",
+        "Track_Type", "Undercarriage_Pad_Width", "Stick_Length", "Thumb",
+        "Pattern_Changer", "Grouser_Type",
+        "Differential_Type", "Steering_Controls"
+    ])
+
+    #Feature Engineering
+    #saledate -features from saledate (year, month, day, weekday, day of year)
+    df_train_data["saledate"] = pd.to_datetime(df_train_data["saledate"])
+    df_train_data["SaleYear"] = df_train_data["saledate"].dt.year
+    df_train_data["SaleMonth"] = df_train_data["saledate"].dt.month
+    df_train_data["SaleDay"] = df_train_data["saledate"].dt.day
+    df_train_data["SaleDayOfWeek"] = df_train_data["saledate"].dt.dayofweek
+    df_train_data["SaleDayOfYear"] = df_train_data["saledate"].dt.dayofyear
+    df_train_data = df_train_data.drop("saledate", axis=1) #Remove original saledate column
+
+    #machine_age at sale (how old the machine is when sold)
+    df_train_data["MachineAge"] = df_train_data["SaleYear"] - df_train_data["YearMade"]
+
+    return df_train_data
